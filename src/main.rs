@@ -1,6 +1,9 @@
 use self_update::cargo_crate_version;
 
-const OWNER: &str = "Wimt";
+#[cfg(feature = "archive-zip")]
+use zip::result::ZipError;
+
+const OWNER: &str = "WhereIsMyToast";
 const REPO_NAME: &str = "CanadaLauncher";
 
 fn main() -> Result<(), Box<dyn (::std::error::Error)>> {

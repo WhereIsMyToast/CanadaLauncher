@@ -1,7 +1,8 @@
 [package]
-name = "CanadaDowloader"
+name = "CanadaLauncher"
 version = "0.1.1"
 edition = "2021"
 
 [dependencies]
-self_update = "0.41.0"
+self_update = { version = "0.41.0", features = ["archive-zip"] }
+zip = "2.2.2"
