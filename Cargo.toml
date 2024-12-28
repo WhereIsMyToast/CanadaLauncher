@@ -1,8 +1,13 @@
 [package]
 name = "CanadaLauncher"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 
 [dependencies]
 self_update = { version = "0.41.0", features = ["archive-zip"] }
+slint = "1.8.0"
+slint-build = "1.9.1"
 zip = "2.2.2"
+
+[build-dependencies]
+slint-build = "1.8.0"

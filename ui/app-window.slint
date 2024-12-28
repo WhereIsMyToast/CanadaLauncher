@@ -1,0 +1,45 @@
+import { VerticalBox, HorizontalBox } from "std-widgets.slint";
+
+export component AppWindow inherits Window {
+    background: #435469;
+    in property <string> version;
+    width: 1000px;
+    height: 600px;
+    Rectangle {
+        background: #333333;
+        width: 250px;
+        x: 0px;
+        Rectangle {
+            height: 80px;
+            width: 250px;
+            x: 0px;
+            y: 0px;
+            Text {
+                font-size: 17px;
+                font-weight: 700;
+                text: "Bienvenido a Minecraft Canadá";
+                x: 10px;
+                y: 10px;
+            }
+
+            Image {
+                //Canada logo
+            }
+        }
+    }
+
+    Image {
+        width: 200px;
+        x: 402px;
+        y: 71px;
+        height: 200px;
+        source: @image-url("./minecraft_img.png");
+        image-fit: fill;
+    }
+
+    Text {
+        text: "Version: \{version}";
+        x: 849px;
+        y: 576px;
+    }
+}
