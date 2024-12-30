@@ -1,8 +1,10 @@
-import { VerticalBox, HorizontalBox } from "std-widgets.slint";
+import { VerticalBox, HorizontalBox, Button } from "std-widgets.slint";
 
 export component AppWindow inherits Window {
     background: #435469;
     in property <string> version;
+    in property <int> progress: 0;
+    callback download_pressed();
     width: 1000px;
     height: 600px;
     Rectangle {
@@ -15,8 +17,8 @@ export component AppWindow inherits Window {
             x: 0px;
             y: 0px;
             Text {
-                font-size: 17px;
-                font-weight: 700;
+                font-size: 16px;
+                font-weight: 600;
                 text: "Bienvenido a Minecraft Canadá";
                 x: 10px;
                 y: 10px;
@@ -41,5 +43,37 @@ export component AppWindow inherits Window {
         text: "Version: \{version}";
         x: 849px;
         y: 576px;
+    }
+
+    Rectangle {
+        VerticalLayout {
+            HorizontalLayout {
+                alignment: center;
+                Button {
+                    text: "Descargar";
+                    height: 30px;
+                    clicked => {
+                        root.download_pressed();
+                    }
+                }
+            }
+
+            Rectangle {
+                width: 80%;
+                height: 30px;
+                border-width: 1px;
+                border-color: white;
+                Rectangle {
+                    width: parent.width * (root.progress / 100);
+                    height: parent.height;
+                    background: green;
+                }
+            }
+        }
+
+        width: 400px;
+        x: 294px;
+        y: 490px;
+        height: 60px;
     }
 }
