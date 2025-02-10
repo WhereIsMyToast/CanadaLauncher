@@ -156,6 +156,7 @@ async fn start_downloading(minecraft_version: String, mod_type_str: String, mod_
 
     log_to_frontend("Proceso de descarga completado. Iniciando Minecraft... 🚀");
     open_minecraft_launcher();
+    std::process::exit(0);
 }
 
 #[tauri::command]

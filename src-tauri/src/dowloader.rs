@@ -7,15 +7,17 @@ use aws_sdk_s3::{
     Client, Config,
 };
 use base64::{engine::general_purpose, Engine};
+use chrono::Utc;
 use dirs::config_dir;
 use dotenv::dotenv;
 use dotenv_codegen::dotenv;
+use nbt::{Blob, Value};
 use reqwest;
 use std::{
     env,
     error::Error,
-    fs::{self, File},
-    io::Write,
+    fs::{self, File, OpenOptions},
+    io::{Read, Write},
     path::PathBuf,
     process::Command,
     time::SystemTime,
@@ -375,23 +377,40 @@ fn create_minecraft_instance(
         fs::create_dir_all(&new_dir)?;
         log_to_frontend(&format!("Directorio creado: {}", new_dir.display()));
     }
+    let profiles: serde_json::Value = if profiles_json.exists() {
+        let file_contents = fs::read_to_string(&profiles_json)?;
+        serde_json::from_str(&file_contents).unwrap_or_else(|_| serde_json::json!({"profiles": {}}))
+    } else {
+        serde_json::json!({"profiles": {}})
+    };
 
-    let mut file = fs::File::create(&profiles_json)?;
-    file.write_all(b"{}")?;
+    let mut profiles_obj = profiles.clone();
 
-    let mut profiles: serde_json::Value = serde_json::from_str("{}")?;
     let new_profile = MinecraftProfile {
         name: "Canada Mods".to_string(),
         game_dir: new_dir.to_string_lossy().to_string(),
         version: version.clone(),
         java_args: Some("-Xmx7G".to_string()),
         icon: get_encoded_icon(),
+        last_used: get_now_time(),
     };
 
-    let profile_json = serde_json::to_value(&new_profile)?;
-    profiles["profiles"]["Modded Profile"] = profile_json;
+    println!(
+        "Generated Profile JSON: {}",
+        serde_json::to_string_pretty(&new_profile)?
+    );
 
-    let updated_profiles = serde_json::to_string_pretty(&profiles)?;
+    let profile_json = serde_json::to_value(&new_profile)?;
+
+    if let Some(profiles_map) = profiles_obj["profiles"].as_object_mut() {
+        profiles_map.insert("Modded Profile".to_string(), profile_json);
+    } else {
+        profiles_obj["profiles"] = serde_json::json!({
+            "Modded Profile": profile_json
+        });
+    }
+
+    let updated_profiles = serde_json::to_string_pretty(&profiles_obj)?;
     fs::write(&profiles_json, updated_profiles)?;
 
     log_to_frontend("Perfil de Minecraft creado exitosamente con una instancia separada.");
@@ -418,4 +437,9 @@ fn is_version_installed(minecraft_version: &str, mod_version: &str, loader: ModL
     version_dir.push(version_format);
 
     version_dir.exists()
+}
+
+fn get_now_time() -> String {
+    let now = Utc::now();
+    now.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
 }

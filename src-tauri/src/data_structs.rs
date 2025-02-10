@@ -13,7 +13,10 @@ pub struct MinecraftProfile {
     pub version: String,
     #[serde(rename = "javaArgs")]
     pub java_args: Option<String>,
+    #[serde(rename = "icon")]
     pub icon: String,
+    #[serde(rename = "lastUsed")]
+    pub last_used: String,
 }
 
 #[derive(Deserialize, Debug)]
