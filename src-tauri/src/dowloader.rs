@@ -9,6 +9,7 @@ use aws_sdk_s3::{
 use base64::{engine::general_purpose, Engine};
 use dirs::config_dir;
 use dotenv::dotenv;
+use dotenv_codegen::dotenv;
 use reqwest;
 use std::{
     env,
@@ -20,6 +21,12 @@ use std::{
     time::SystemTime,
 };
 
+fn get_env_var(key: &str, value: &str) -> String {
+    if value.is_empty() {
+        log_to_frontend(&format!("Error: {} no está configurado o está vacío.", key));
+    }
+    value.to_string()
+}
 pub async fn dowload_mods(
     loader: ModLoaders,
     mod_version: String,
@@ -27,10 +34,10 @@ pub async fn dowload_mods(
 ) -> Result<(), Box<dyn Error>> {
     dotenv().ok();
 
-    let access_key = env::var("R2_ACCESS_KEY").expect("Set R2_ACCESS_KEY");
-    let secret_key = env::var("R2_SECRET_KEY").expect("Set R2_SECRET_KEY");
-    let endpoint_url = env::var("R2_ENDPOINT").expect("Set R2_ENDPOINT");
-    let bucket_name = env::var("R2_BUCKET").expect("Set R2_BUCKET");
+    let access_key = get_env_var("R2_ACCESS_KEY", dotenv!("R2_ACCESS_KEY"));
+    let secret_key = get_env_var("R2_SECRET_KEY", dotenv!("R2_SECRET_KEY"));
+    let endpoint_url = get_env_var("R2_ENDPOINT", dotenv!("R2_ENDPOINT"));
+    let bucket_name = get_env_var("R2_BUCKET", dotenv!("R2_BUCKET"));
     let region = Region::new("us-east-1");
 
     let credentials = Credentials::new(&access_key, &secret_key, None, None, "loaded-from-env");
