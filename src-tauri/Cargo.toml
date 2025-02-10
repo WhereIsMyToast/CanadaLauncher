@@ -18,8 +18,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
-tauri-plugin-shell = "2"
+tauri = { version = "2.2", features = [] }
+tauri-plugin-shell = { version = "2.2" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 self_update = { version = "0.42.0", features = ["archive-zip"] }
@@ -29,3 +29,7 @@ aws-sdk-s3 = "1.74.0"
 dotenv = "0.15"
 dirs = "6.0"
 base64 = "0.22.1"
+os_pipe = "1.1"
+libc = "0.2"
+lazy_static = "1.5.0"
+json_struct_db = { git = "https://github.com/WhereIsMyToast/jsonStructDB.git" }

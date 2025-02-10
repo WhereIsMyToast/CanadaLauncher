@@ -1,4 +1,7 @@
-use crate::data_structs::{get_fabric_versions, get_forge_versions, MinecraftProfile, ModLoaders};
+use crate::{
+    data_structs::{MinecraftProfile, ModLoaders},
+    log_to_frontend,
+};
 use aws_sdk_s3::{
     config::{Credentials, Region},
     Client, Config,
@@ -12,7 +15,7 @@ use std::{
     error::Error,
     fs::{self, File},
     io::Write,
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::Command,
     time::SystemTime,
 };
@@ -40,27 +43,51 @@ pub async fn dowload_mods(
         .build();
 
     let client = Client::from_conf(config);
+    let mut minecraft_canada_dir = get_mods_dir();
+    minecraft_canada_dir.pop();
+
     let mut minecraft_dir = get_mods_dir();
     minecraft_dir.pop();
+    minecraft_dir.pop();
+    minecraft_dir.push(".minecraft");
+    minecraft_dir.push("launcher_profiles.json");
+
     let _ = create_minecraft_instance(
-        minecraft_dir.clone(),
+        minecraft_canada_dir.clone(),
         get_version_format(&minecraft_version, &mod_version, loader.clone()),
+        minecraft_dir.clone(),
     );
 
-    match loader {
-        ModLoaders::Forge => {
-            println!("Installing Forge...");
-            if let Err(e) = install_forge(&mod_version, minecraft_version.clone()).await {
-                eprintln!("Forge installation failed: {}", e);
+    minecraft_dir.pop();
+
+    if !is_version_installed(&minecraft_version, &mod_version, loader.clone()) {
+        match loader {
+            ModLoaders::Forge => {
+                log_to_frontend("Instalando Forge... ⚙️");
+                if let Err(e) = install_forge(&mod_version, minecraft_version.clone()).await {
+                    log_to_frontend(&format!("La instalación de Forge falló: {}", e));
+                }
+            }
+            ModLoaders::Fabric => {
+                log_to_frontend("Instalando Fabric... ⚙️");
+                if let Err(e) =
+                    install_fabric(&mod_version, &minecraft_dir, &minecraft_version).await
+                {
+                    log_to_frontend(&format!("La instalación de Fabric falló: {}", e));
+                }
             }
         }
-        ModLoaders::Fabric => {
-            println!("Installing Fabric...");
-            if let Err(e) = install_fabric(&mod_version, &minecraft_dir, &minecraft_version).await {
-                eprintln!("Fabric installation failed: {}", e);
-            }
-        }
+    } else {
+        log_to_frontend(&format!(
+            "{} versión {} ya está instalada, omitiendo instalación.",
+            match loader {
+                ModLoaders::Forge => "Forge",
+                ModLoaders::Fabric => "Fabric",
+            },
+            mod_version
+        ));
     }
+
     sync_files(&client, &bucket_name).await?;
 
     Ok(())
@@ -69,7 +96,7 @@ pub async fn dowload_mods(
 fn get_version_format(minecraft_version: &str, tool_version: &str, tool: ModLoaders) -> String {
     match tool {
         ModLoaders::Forge => format!("{}-forge-{}", minecraft_version, tool_version),
-        ModLoaders::Fabric => format!("fabric-loader-{}-{}", "0.16.5", minecraft_version),
+        ModLoaders::Fabric => format!("fabric-loader-{}-{}", "0.16.10", minecraft_version),
     }
 }
 
@@ -78,7 +105,7 @@ async fn sync_files(client: &Client, bucket: &str) -> Result<(), Box<dyn Error>>
     let remote_files = resp.contents();
 
     if remote_files.is_empty() {
-        println!("Bucket is empty or listing is restricted");
+        log_to_frontend("El bucket está vacío o la lista está restringida.");
         return Ok(());
     }
     let remote_keys: Vec<String> = remote_files
@@ -101,14 +128,17 @@ async fn sync_files(client: &Client, bucket: &str) -> Result<(), Box<dyn Error>>
             let local_file_path = path.to_str().unwrap_or_default();
 
             if should_download(&local_file_path, remote_size.unwrap(), remote_modified) {
-                println!(
-                    "\n Downloading updated file: {} in {}",
+                log_to_frontend(&format!(
+                    "\nDescargando archivo actualizado: {} en {}",
                     key, local_file_path
-                );
+                ));
 
                 download_file(client, bucket, key, &local_file_path).await?;
             } else {
-                println!("No changes detected for '{}', skipping...", key);
+                log_to_frontend(&format!(
+                    "No se detectaron cambios para '{}', omitiendo...",
+                    key
+                ));
             }
         }
     }
@@ -126,21 +156,26 @@ async fn install_forge(version: &str, minecraft_version: String) -> Result<(), B
     );
     let save_path = env::temp_dir().join("forge_installer.jar");
     let save_path_str = save_path.to_str().unwrap_or("C:/temp/forge_installer.jar");
-    println!(
-        "Attempting to download Forge installer from: {}",
+    log_to_frontend(&format!(
+        "Intentando descargar el instalador de Forge desde: {}",
         installer_url
-    );
+    ));
 
     if let Err(e) = download_installer(&installer_url, save_path_str).await {
-        eprintln!("Failed to download Forge installer: {}", e);
+        log_to_frontend(&format!(
+            "No se pudo descargar el instalador de Forge: {}",
+            e
+        ));
         return Err(e);
     }
 
-    println!("Forge installer downloaded successfully.");
-    println!("Running Forge installer...");
+    log_to_frontend("Instalador de Forge descargado exitosamente.");
+    log_to_frontend("Ejecutando el instalador de Forge...");
 
     let mut minecraft_dir = get_mods_dir();
     minecraft_dir.pop();
+    minecraft_dir.pop();
+    minecraft_dir.push(".minecraft");
     if let Err(e) = install_java_package(
         save_path_str,
         "--installClient",
@@ -148,11 +183,11 @@ async fn install_forge(version: &str, minecraft_version: String) -> Result<(), B
     )
     .await
     {
-        eprintln!("Forge installation failed: {}", e);
+        log_to_frontend(&format!("La instalación de Forge falló: {}", e));
         return Err(e);
     }
 
-    println!("Forge installation completed successfully.");
+    log_to_frontend("Instalación de Forge completada exitosamente.");
     Ok(())
 }
 
@@ -179,11 +214,11 @@ fn delete_missing_local_files(remote_files: &Vec<String>) -> Result<(), Box<dyn 
 
     for local_file in &local_files {
         if !remote_files.contains(local_file) {
-            println!("\n Deleting local file: {}", local_file);
+            log_to_frontend(&format!("\nEliminando archivo local: {}", local_file));
             let mut path = get_mods_dir();
             path.push(local_file);
             match fs::remove_file(path) {
-                Err(e) => println!("error,{}", e),
+                Err(e) => log_to_frontend(&format!("error,{}", e)),
                 _ok => {}
             }
         }
@@ -205,17 +240,30 @@ async fn install_fabric(
     let save_path = env::temp_dir().join("fabric_installer.jar");
     let save_path_str = save_path.to_str().unwrap_or("C:/temp/fabric_installer.jar");
 
-    println!("Downloading Fabric installer from {}", installer_url);
+    log_to_frontend(&format!(
+        "Descargando instalador de Fabric desde: {}",
+        installer_url
+    ));
 
     download_installer(&installer_url, save_path_str).await?;
 
-    println!("Installing Fabric...");
+    log_to_frontend("Instalando Fabric...");
 
     let java_command = if cfg!(target_os = "windows") {
         "java.exe"
     } else {
         "java"
     };
+
+    let command_str = format!(
+        "{} -jar \"{}\" client -dir \"{}\" -mcversion {}",
+        java_command,
+        save_path_str,
+        minecraft_dir.display(),
+        minecraft_version
+    );
+
+    log_to_frontend(&format!("Ejecutando comando: {}", command_str));
 
     let status = Command::new(java_command)
         .arg("-jar")
@@ -228,21 +276,21 @@ async fn install_fabric(
         .status()?;
 
     if status.success() {
-        println!("Fabric installation successful.");
+        log_to_frontend("Instalación de Fabric exitosa.");
         let _ = fs::remove_file(save_path);
     } else {
-        eprintln!("Error installing Fabric.");
+        log_to_frontend("Error al instalar Fabric.");
     }
 
     Ok(())
 }
 
 async fn download_installer(url: &str, save_path: &str) -> Result<(), Box<dyn Error>> {
-    println!("Downloading installer: {}", url);
+    log_to_frontend(&format!("Descargando instalador: {}", url));
     let response = reqwest::get(url).await?.bytes().await?;
     let mut file = File::create(save_path)?;
     file.write_all(&response)?;
-    println!("Downloaded: {}", save_path);
+    log_to_frontend(&format!("Descargado: {}", save_path));
     Ok(())
 }
 
@@ -257,10 +305,10 @@ async fn install_java_package(
         "java"
     };
 
-    println!(
-        "Running Java package installer: {} {}",
+    log_to_frontend(&format!(
+        "Ejecutando instalador de paquete Java: {} {}",
         installer_path, args
-    );
+    ));
 
     let status = Command::new(java_command)
         .arg("-jar")
@@ -270,10 +318,10 @@ async fn install_java_package(
         .status()?;
 
     if status.success() {
-        println!("Installation successful.");
+        log_to_frontend("Instalación exitosa.");
         let _ = fs::remove_file(installer_path);
     } else {
-        eprintln!("Error installing.");
+        log_to_frontend("Error al instalar.");
     }
     Ok(())
 }
@@ -287,12 +335,16 @@ async fn download_file(
     let resp = client.get_object().bucket(bucket).key(key).send().await?;
     let body_bytes = resp.body.collect().await?.into_bytes();
 
-    println!("Downloading '{}', size: {} bytes", key, body_bytes.len());
+    log_to_frontend(&format!(
+        "Descargando '{}', tamaño: {} bytes",
+        key,
+        body_bytes.len()
+    ));
 
     let mut file = File::create(save_path)?;
     file.write_all(&body_bytes)?;
 
-    println!("Downloaded file saved as '{}'", save_path);
+    log_to_frontend(&format!("Archivo descargado guardado como '{}'", save_path));
     Ok(())
 }
 
@@ -301,34 +353,32 @@ fn get_mods_dir() -> PathBuf {
         appdata.push(".minecraftCanada/mods");
         return appdata;
     }
-    println!("Error getting appdata");
+    log_to_frontend("Error al obtener appdata");
     PathBuf::new()
 }
 
-fn create_minecraft_instance(new_dir: PathBuf, version: String) -> Result<(), std::io::Error> {
-    let mut profiles_json = get_mods_dir();
-    profiles_json.pop();
-    profiles_json.push("launcher_profiles.json");
-    println!("{}", profiles_json.display());
+fn create_minecraft_instance(
+    new_dir: PathBuf,
+    version: String,
+    profiles_json: PathBuf,
+) -> Result<(), std::io::Error> {
+    log_to_frontend(&format!("{}", profiles_json.display()));
 
-    // Ensure the directory exists
     if !new_dir.exists() {
         fs::create_dir_all(&new_dir)?;
-        println!("Directory created: {}", new_dir.display());
+        log_to_frontend(&format!("Directorio creado: {}", new_dir.display()));
     }
 
-    // Overwrite the launcher_profiles.json file
-    let mut file = fs::File::create(&profiles_json)?; // This truncates the file if it exists
-    file.write_all(b"{}")?; // Reset file content to an empty JSON object
+    let mut file = fs::File::create(&profiles_json)?;
+    file.write_all(b"{}")?;
 
-    let mut profiles: serde_json::Value = serde_json::from_str("{}")?; // Start fresh
-
+    let mut profiles: serde_json::Value = serde_json::from_str("{}")?;
     let new_profile = MinecraftProfile {
         name: "Canada Mods".to_string(),
         game_dir: new_dir.to_string_lossy().to_string(),
         version: version.clone(),
         java_args: Some("-Xmx7G".to_string()),
-        icon: get_encoded_incon(),
+        icon: get_encoded_icon(),
     };
 
     let profile_json = serde_json::to_value(&new_profile)?;
@@ -337,16 +387,28 @@ fn create_minecraft_instance(new_dir: PathBuf, version: String) -> Result<(), st
     let updated_profiles = serde_json::to_string_pretty(&profiles)?;
     fs::write(&profiles_json, updated_profiles)?;
 
-    println!("Successfully created a new Minecraft profile with a separate instance.");
+    log_to_frontend("Perfil de Minecraft creado exitosamente con una instancia separada.");
 
     Ok(())
 }
 
-static ICON: &[u8] = include_bytes!("../canada.ico");
-fn get_encoded_incon() -> String {
+static ICON: &[u8] = include_bytes!("../canada.png");
+fn get_encoded_icon() -> String {
     let encoder = general_purpose::STANDARD;
-
     let base64_encoded_icon = encoder.encode(ICON);
+    format!("data:image/png;base64,{}", base64_encoded_icon)
+}
 
-    format!("data:image/x-icon;base64,{}", base64_encoded_icon)
+fn is_version_installed(minecraft_version: &str, mod_version: &str, loader: ModLoaders) -> bool {
+    let mut versions_path = get_mods_dir();
+    versions_path.pop();
+    versions_path.pop();
+    versions_path.push(".minecraft");
+    versions_path.push("versions");
+
+    let version_format = get_version_format(minecraft_version, mod_version, loader);
+    let mut version_dir = versions_path.clone();
+    version_dir.push(version_format);
+
+    version_dir.exists()
 }

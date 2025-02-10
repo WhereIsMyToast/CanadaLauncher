@@ -1,12 +1,9 @@
-#[allow(unused_must_use)]
-use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashMap,
-    fs::{self, File},
-    io::copy,
-    path::Path,
-};
+#![allow(dead_code)]
 
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+use reqwest::Error;
 #[derive(Serialize, Deserialize)]
 pub struct MinecraftProfile {
     pub name: String,
@@ -18,11 +15,6 @@ pub struct MinecraftProfile {
     pub java_args: Option<String>,
     pub icon: String,
 }
-
-use reqwest::{
-    blocking::{get, Client},
-    Error,
-};
 
 #[derive(Deserialize, Debug)]
 pub struct MinecraftApiResponse {
@@ -83,8 +75,6 @@ pub async fn get_fabric_versions() -> Result<Vec<String>, Error> {
         .into_iter()
         .map(|fabric| fabric.version)
         .collect();
-
-    println!("Fabric Loader Versions: {:?}", versions);
     Ok(versions)
 }
 
