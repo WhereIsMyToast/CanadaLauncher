@@ -1,6 +1,6 @@
 [package]
 name = "CanadaLauncher"
-version = "0.1.6"
+version = "0.1.7"
 description = "A Canada Mod Downloader"
 authors = ["Wimt"]
 edition = "2021"
