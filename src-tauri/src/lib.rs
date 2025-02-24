@@ -152,7 +152,7 @@ async fn start_downloading(minecraft_version: String, mod_type_str: String, mod_
 
     log_to_frontend(&format!("Usando el cargador de mods: {:?}", loader));
 
-    let _ = dowloader::dowload_mods(loader, mod_version, minecraft_version).await;
+    let _ = dowloader::start_install(loader, mod_version, minecraft_version).await;
 
     log_to_frontend("Proceso de descarga completado. Iniciando Minecraft... 🚀");
     open_minecraft_launcher();
@@ -167,7 +167,6 @@ async fn get_minecraft_versions() -> Vec<String> {
     }
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let _ = update_exe();
