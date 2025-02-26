@@ -52,35 +52,76 @@ pub async fn start_install(loader: ModLoaders, loader_version: String, minecraft
     };
 }
 
-async fn dowload_mods() {
-    dotenv().ok();
+fn get_clients() -> (Vec<Client>, Vec<String>, Vec<PathBuf>) {
+    let mut clients = Vec::<Client>::new();
+    let mut buckets = Vec::<String>::new();
+    let mut directories = Vec::<PathBuf>::new();
 
-    let access_key = get_env_var("R2_ACCESS_KEY", dotenv!("R2_ACCESS_KEY"));
-    let secret_key = get_env_var("R2_SECRET_KEY", dotenv!("R2_SECRET_KEY"));
-    let endpoint_url = get_env_var("R2_ENDPOINT", dotenv!("R2_ENDPOINT"));
-    let bucket_name = get_env_var("R2_BUCKET", dotenv!("R2_BUCKET"));
+    let mut access_key;
+    let mut secret_key;
+    let mut endpoint_url;
+    let mut bucket_name;
     let region = Region::new("us-east-1");
-
-    let credentials = Credentials::new(&access_key, &secret_key, None, None, "loaded-from-env");
-
-    let config = Config::builder()
-        .credentials_provider(credentials)
-        .region(region)
-        .endpoint_url(endpoint_url)
-        .behavior_version_latest()
-        .build();
-
-    let client = Client::from_conf(config);
-
-    match sync_files(&client, &bucket_name).await {
-        Err(e) => {
-            log_to_frontend(&format!("Error to sync files: {}", e));
+    for i in 0..2 {
+        match i {
+            0 => {
+                access_key = get_env_var("MODS_R2_ACCESS_KEY", dotenv!("MODS_R2_ACCESS_KEY"));
+                secret_key = get_env_var("MODS_R2_SECRET_KEY", dotenv!("MODS_R2_SECRET_KEY"));
+                endpoint_url = get_env_var("MODS_R2_ENDPOINT", dotenv!("MODS_R2_ENDPOINT"));
+                bucket_name = get_env_var("MODS_R2_BUCKET", dotenv!("MODS_R2_BUCKET"));
+                buckets.push(bucket_name);
+                let mut dir = get_minecraft_canada_directory();
+                dir.push("mods");
+                directories.push(dir);
+            }
+            1 => {
+                access_key = get_env_var("RESP_R2_ACCESS_KEY", dotenv!("RESP_R2_ACCESS_KEY"));
+                secret_key = get_env_var("RESP_R2_SECRET_KEY", dotenv!("RESP_R2_SECRET_KEY"));
+                endpoint_url = get_env_var("RESP_R2_ENDPOINT", dotenv!("RESP_R2_ENDPOINT"));
+                bucket_name = get_env_var("RESP_R2_BUCKET", dotenv!("RESP_R2_BUCKET"));
+                buckets.push(bucket_name);
+                let mut dir = get_minecraft_canada_directory();
+                dir.push("resourcepacks");
+                directories.push(dir);
+            }
+            _ => panic!("Error in fetching clients"),
         }
-        Ok(()) => (),
-    };
+        let credentials = Credentials::new(&access_key, &secret_key, None, None, "loaded-from-env");
+
+        let config = Config::builder()
+            .credentials_provider(credentials)
+            .region(region.clone())
+            .endpoint_url(endpoint_url.clone())
+            .behavior_version_latest()
+            .build();
+
+        clients.push(Client::from_conf(config));
+    }
+    (clients, buckets, directories)
 }
 
-async fn sync_files(client: &Client, bucket: &str) -> Result<(), Box<dyn Error>> {
+async fn dowload_mods() {
+    dotenv().ok();
+    let (clients, bucket_names, directories) = get_clients();
+    for ((client, bucket_name), directory) in clients
+        .into_iter()
+        .zip(bucket_names.into_iter())
+        .zip(directories.into_iter())
+    {
+        match sync_files(&client, &bucket_name, directory).await {
+            Err(e) => {
+                log_to_frontend(&format!("Error to sync files: {}", e));
+            }
+            Ok(()) => (),
+        };
+    }
+}
+
+async fn sync_files(
+    client: &Client,
+    bucket: &str,
+    directory: PathBuf,
+) -> Result<(), Box<dyn Error>> {
     let resp = client.list_objects_v2().bucket(bucket).send().await?;
     let remote_files = resp.contents();
 
@@ -92,8 +133,8 @@ async fn sync_files(client: &Client, bucket: &str) -> Result<(), Box<dyn Error>>
         .iter()
         .filter_map(|obj| obj.key().map(String::from))
         .collect();
-    if !fs::exists(&get_mods_directory()).unwrap() {
-        let _ = fs::create_dir(&get_mods_directory());
+    if !fs::exists(&directory).unwrap() {
+        let _ = fs::create_dir(&directory);
     }
     for obj in remote_files {
         if let Some(key) = obj.key() {
@@ -103,7 +144,7 @@ async fn sync_files(client: &Client, bucket: &str) -> Result<(), Box<dyn Error>>
                 .as_ref()
                 .map(|t| t.clone().as_secs_f64())
                 .unwrap_or(0.0);
-            let mut path = get_mods_directory();
+            let mut path = directory.clone();
             path.push(key);
             let local_file_path = path.to_str().unwrap_or_default();
 
@@ -123,7 +164,7 @@ async fn sync_files(client: &Client, bucket: &str) -> Result<(), Box<dyn Error>>
         }
     }
 
-    delete_missing_local_files(&remote_keys)?;
+    delete_missing_local_files(&remote_keys, directory)?;
 
     Ok(())
 }
@@ -143,8 +184,11 @@ fn should_download(local_path: &str, remote_size: i64, remote_modified: f64) -> 
     true
 }
 
-fn delete_missing_local_files(remote_files: &Vec<String>) -> Result<(), Box<dyn Error>> {
-    let local_files: Vec<String> = fs::read_dir(get_mods_directory())?
+fn delete_missing_local_files(
+    remote_files: &Vec<String>,
+    directory: PathBuf,
+) -> Result<(), Box<dyn Error>> {
+    let local_files: Vec<String> = fs::read_dir(&directory)?
         .filter_map(|entry| entry.ok())
         .filter_map(|entry| entry.file_name().into_string().ok())
         .collect();
@@ -152,7 +196,7 @@ fn delete_missing_local_files(remote_files: &Vec<String>) -> Result<(), Box<dyn 
     for local_file in &local_files {
         if !remote_files.contains(local_file) {
             log_to_frontend(&format!("\nEliminando archivo local: {}", local_file));
-            let mut path = get_mods_directory();
+            let mut path = directory.clone();
             path.push(local_file);
             match fs::remove_file(path) {
                 Err(e) => log_to_frontend(&format!("error,{}", e)),
@@ -184,15 +228,6 @@ async fn download_file(
 
     log_to_frontend(&format!("Archivo descargado guardado como '{}'", save_path));
     Ok(())
-}
-
-fn get_mods_directory() -> PathBuf {
-    if let Some(mut appdata) = config_dir() {
-        appdata.push(".minecraftCanada/mods");
-        return appdata;
-    }
-    log_to_frontend("Error al obtener appdata");
-    PathBuf::new()
 }
 
 fn get_minecraft_canada_directory() -> PathBuf {
